@@ -5,23 +5,6 @@ public static partial class Game
     static Random r = new Random();
     static char[] symbols = { 'A', 'B', 'C', 'D', 'E', 'F' };
 
-    public static BoardState InitializeGame(int boardSize)
-    {
-        return
-            new Board(boardSize)
-            .FillWithoutTriples()
-            .ToStartState();
-    }
-
-    public static Board FillWithoutTriples(this Board board)
-    {
-        // Двойным циклом обходим все клетки доски
-        for (int row = 0; row < board.size; row++)
-            for (int col = 0; col < board.size; col++)
-                board.cells[row, col] = new Element(board.PickSymbol(row, col));
-
-        return board;
-    }
 
     private static char PickSymbol(this Board board, int row, int col)
     {
@@ -46,23 +29,7 @@ public static partial class Game
         return left || up;
     }
 
-    public static BoardState ToStartState(this Board board)
-    {
-        return new BoardState(board, 0);
-    }
-
-    public static BoardState ProcessCascade(this BoardState state)
-    {
-        List<Match> matches = state.Board.FindMatches();
-
-        if (matches.Count == 0)
-            return state;
-
-        return
-            state.RemoveMatches(matches)
-            .FillEmptySpaces()
-            .ProcessCascade();
-    }
+    
 
     public static List<Match> FindMatches(this Board board)
     {
@@ -149,19 +116,7 @@ public static partial class Game
         }
     }
 
-    public static BoardState RemoveMatches(this BoardState currentState, List<Match> matches)
-    {
-        if (matches == null || matches.Count == 0)
-            return currentState;
-
-        int newScore = currentState.Score + matches.Sum(m => m.Length).CalculateScore();
-
-        return            
-            currentState.Board.cells.MarkForRemoval(matches)            
-            .ApplyGravity(currentState.Board.size)            
-            .ToBoard(currentState.Board.size)
-            .ToState(newScore);
-    }
+    
 
     private static Element[,] MarkForRemoval(this Element[,] cells, List<Match> matches)
     {
@@ -205,23 +160,7 @@ public static partial class Game
         return newCells;
     }
 
-    private static int CalculateScore(this int removedCount)
-    {
-        // Базовая система подсчета очков: 10 за каждый элемент
-        return removedCount * 10;
-    }
-
-
-    public static BoardState FillEmptySpaces(this BoardState currentState)
-    {
-        if (currentState.Board.cells == null)
-            return currentState;
-
-        return currentState.Board.cells
-            .FillRandom()
-            .ToBoard(currentState.Board.size)
-            .ToState(currentState.Score);
-    }
+    
 
     private static Element[,] FillRandom(this Element[,] cells)
     {
@@ -249,9 +188,15 @@ public static partial class Game
         return new Board { size = size, cells = cells };
     }
 
-    private static BoardState ToState(this Board board, int score)
+
+    public static Board FillWithoutTriples(this Board board)
     {
-        return new BoardState(board, score);
+        // Двойным циклом обходим все клетки доски
+        for (int row = 0; row < board.size; row++)
+            for (int col = 0; col < board.size; col++)
+                board.cells[row, col] = new Element(board.PickSymbol(row, col));
+
+        return board;
     }
 
     public static Board Draw(this Board board)
@@ -270,13 +215,6 @@ public static partial class Game
         return board;
     }
 
-    public static BoardState Show(this BoardState state)
-    {
-        state.Board.Draw();
-        Console.WriteLine("Score: " + state.Score);
-        return state;
-    }
-
     public static Board CloneBoard(this Board board)
     {
         Board b = new Board(board.size);
@@ -284,6 +222,53 @@ public static partial class Game
             for (int col = 0; col < board.size; col++)
                 b.cells[row, col] = board.cells[row, col];
         return b;
+    }
+
+    public static BoardState InitializeGame(int boardSize)
+    {
+        return
+            new Board(boardSize)
+            .FillWithoutTriples()
+            .ToStartState();
+    }
+
+    public static BoardState ProcessCascade(this BoardState state)
+    {
+        List<Match> matches = state.Board.FindMatches();
+
+        if (matches.Count == 0)
+            return state;
+
+        return
+            state.RemoveMatches(matches)
+            .FillEmptySpaces()
+            .ProcessCascade();
+    }
+
+    public static BoardState ToStartState(this Board board)
+    {
+        return new BoardState(board, 0);
+    }
+
+    public static BoardState Show(this BoardState state)
+    {
+        state.Board.Draw();
+        Console.WriteLine("Score: " + state.Score);
+        return state;
+    }
+
+    public static BoardState RemoveMatches(this BoardState currentState, List<Match> matches)
+    {
+        if (matches == null || matches.Count == 0)
+            return currentState;
+
+        int newScore = currentState.Score + matches.Sum(m => m.Length).CalculateScore();
+
+        return
+            currentState.Board.cells.MarkForRemoval(matches)
+            .ApplyGravity(currentState.Board.size)
+            .ToBoard(currentState.Board.size)
+            .ToState(newScore);
     }
 
     public static BoardState ReadMove(this BoardState bs)
@@ -298,9 +283,28 @@ public static partial class Game
             .ApplyTo(bs);
     }
 
-    private static int[] ParseCoords(this string input)
+    public static BoardState PlayTurn(this BoardState state)
     {
-        return input.Split(' ').Select(int.Parse).ToArray();
+        return state
+            .Show()
+            .ReadMove()
+            .ProcessCascade();
+    }
+
+    private static BoardState ToState(this Board board, int score)
+    {
+        return new BoardState(board, score);
+    }
+
+    public static BoardState FillEmptySpaces(this BoardState currentState)
+    {
+        if (currentState.Board.cells == null)
+            return currentState;
+
+        return currentState.Board.cells
+            .FillRandom()
+            .ToBoard(currentState.Board.size)
+            .ToState(currentState.Score);
     }
 
     private static BoardState ApplyTo(this int[] c, BoardState bs)
@@ -313,11 +317,15 @@ public static partial class Game
         return board.ToState(bs.Score);
     }
 
-    public static BoardState PlayTurn(this BoardState state)
+    private static int[] ParseCoords(this string input)
     {
-        return state
-            .Show()
-            .ReadMove()
-            .ProcessCascade();
+        return input.Split(' ').Select(int.Parse).ToArray();
     }
+
+    private static int CalculateScore(this int removedCount)
+    {
+        // Базовая система подсчета очков: 10 за каждый элемент
+        return removedCount * 10;
+    }
+
 }
