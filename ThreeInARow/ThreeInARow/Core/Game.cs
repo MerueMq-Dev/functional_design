@@ -1,37 +1,99 @@
-﻿namespace ThreeInARow.Core;
+﻿using ThreeInARow.Core;
+using ThreeInARow.Helpers;
 
 public static partial class Game
 {
     static Random r = new Random();
     static char[] symbols = { 'A', 'B', 'C', 'D', 'E', 'F' };
-
-
-    private static char PickSymbol(this Board board, int row, int col)
-    {
-        while (true)
-        {
-            char c = symbols[r.Next(symbols.Length)];
-            if (!board.CreatesTriple(row, col, c)) return c;
-        }
-    }
-
-    private static bool CreatesTriple(this Board board, int row, int col, char c)
-    {
-        // Проверяем двух соседей слева и двух сверху (они уже заполнены)
-        bool left = col >= 2
-            && board.cells[row, col - 1].Symbol == c
-            && board.cells[row, col - 2].Symbol == c;
-
-        bool up = row >= 2
-            && board.cells[row - 1, col].Symbol == c
-            && board.cells[row - 2, col].Symbol == c;
-
-        return left || up;
-    }
-
     
+    public static BoardState InitializeGame(int boardSize = 8)
+    {
+        return new BoardState(new Board(boardSize), 0)
+            .Pipe(FillEmptySpaces)
+            .Pipe(ProcessCascade);
+    }
 
-    public static List<Match> FindMatches(this Board board)
+    public static BoardState ProcessCascade(BoardState state)
+    {
+        List<Match> matches = FindMatches(state.Board);
+
+          if (matches.Count == 0)
+            return state;
+
+        return RemoveMatches(state, matches)
+            .Pipe(FillEmptySpaces)
+            .Pipe(ProcessCascade);
+    }
+
+    public static BoardState RemoveMatches(BoardState currentState, List<Match> matches)
+    {
+        if (matches == null || matches.Count == 0)
+            return currentState;
+
+        // Шаг 1: Помечаем ячейки для удаления
+        Element[,] markedCells = MarkCellsForRemoval(currentState.Board, matches);
+
+        // Шаг 2: Применяем гравитацию
+        Element[,] gravityAppliedCells = ApplyGravity(markedCells, currentState.Board.size);
+
+        // Шаг 3: Подсчитываем очки
+        int removedCount = matches.Sum(m => m.Length);
+        int newScore = currentState.Score + CalculateScore(removedCount);
+
+        // Возвращаем НОВОЕ состояние
+        return new BoardState(
+            new Board { size = currentState.Board.size, cells = gravityAppliedCells },
+            newScore
+        );
+    }
+
+    public static BoardState FillEmptySpaces(BoardState currentState)
+    {
+        if (currentState.Board.cells == null)
+            return currentState;
+
+        Element[,] newCells = (Element[,])currentState.Board.cells.Clone();
+
+        for (int row = 0; row < currentState.Board.size; row++)
+        {
+            for (int col = 0; col < currentState.Board.size; col++)
+            {
+                if (newCells[row, col].Symbol == Element.EMPTY)
+                {
+                    newCells[row, col] = new Element
+                    {
+                        Symbol = symbols[r.Next(symbols.Length)]
+                    };
+                }
+            }
+        }
+
+        return new BoardState(
+            new Board { size = currentState.Board.size, cells = newCells },
+            currentState.Score
+        );
+    }
+
+    public static BoardState ReadMove(BoardState bs)
+    {
+        Console.WriteLine(">");
+        string input = Console.ReadLine();
+        if (input == "q")
+            Environment.Exit(0);
+
+        Board board = CloneBoard(bs.Board);
+        string[] coords = input.Split(' ');
+        int x = int.Parse(coords[1]);
+        int y = int.Parse(coords[0]);
+        int x1 = int.Parse(coords[3]);
+        int y1 = int.Parse(coords[2]);
+        Element e = board.cells[x, y];
+        board.cells[x, y] = board.cells[x1, y1];
+        board.cells[x1, y1] = e;
+        return new BoardState(board, bs.Score);
+    }
+
+    public static List<Match> FindMatches(Board board)
     {
         var matches = new List<Match>();
 
@@ -51,7 +113,7 @@ public static partial class Game
                 // Если текущая ячейка пустая, обрываем текущую последовательность
                 if (board.cells[row, col].Symbol == Element.EMPTY)
                 {
-                    matches.AddIfValid(row, startCol, col - startCol, MatchDirection.Horizontal);
+                    AddMatchIfValid(matches, row, startCol, col - startCol, MatchDirection.Horizontal);
                     startCol = col + 1;
                     continue;
                 }
@@ -59,12 +121,12 @@ public static partial class Game
                 // Проверяем совпадение символов для непустых ячеек
                 if (board.cells[row, col].Symbol != board.cells[row, startCol].Symbol)
                 {
-                    matches.AddIfValid(row, startCol, col - startCol, MatchDirection.Horizontal);
+                    AddMatchIfValid(matches, row, startCol, col - startCol, MatchDirection.Horizontal);
                     startCol = col;
                 }
                 else if (col == board.size - 1)
                 {
-                    matches.AddIfValid(row, startCol, col - startCol + 1, MatchDirection.Horizontal);
+                    AddMatchIfValid(matches, row, startCol, col - startCol + 1, MatchDirection.Horizontal);
                 }
             }
         }
@@ -85,7 +147,7 @@ public static partial class Game
                 // Если текущая ячейка пустая, обрываем текущую последовательность
                 if (board.cells[row, col].Symbol == Element.EMPTY)
                 {
-                    matches.AddIfValid(startRow, col, row - startRow, MatchDirection.Vertical);
+                    AddMatchIfValid(matches, startRow, col, row - startRow, MatchDirection.Vertical);
                     startRow = row + 1;
                     continue;
                 }
@@ -93,12 +155,12 @@ public static partial class Game
                 // Проверяем совпадение символов для непустых ячеек
                 if (board.cells[row, col].Symbol != board.cells[startRow, col].Symbol)
                 {
-                    matches.AddIfValid(startRow, col, row - startRow, MatchDirection.Vertical);
+                    AddMatchIfValid(matches, startRow, col, row - startRow, MatchDirection.Vertical);
                     startRow = row;
                 }
                 else if (row == board.size - 1)
                 {
-                    matches.AddIfValid(startRow, col, row - startRow + 1, MatchDirection.Vertical);
+                    AddMatchIfValid(matches, startRow, col, row - startRow + 1, MatchDirection.Vertical);
                 }
             }
         }
@@ -106,21 +168,11 @@ public static partial class Game
         return matches;
     }
 
-    private static void AddIfValid(this List<Match> matches, int row, int col,
-            int length, MatchDirection direction)
-    {
-        // Учитываем только комбинации из 3 и более элементов (ТЗ)
-        if (length >= 3)
-        {
-            matches.Add(new Match(direction, row, col, length));
-        }
-    }
+    // ===================== -> Element[,] =====================
 
-    
-
-    private static Element[,] MarkForRemoval(this Element[,] cells, List<Match> matches)
+    private static Element[,] MarkCellsForRemoval(Board board, List<Match> matches)
     {
-        Element[,] newCells = (Element[,])cells.Clone();
+        Element[,] newCells = (Element[,])board.cells.Clone();
 
         foreach (var match in matches)
         {
@@ -136,13 +188,17 @@ public static partial class Game
         return newCells;
     }
 
-    private static Element[,] ApplyGravity(this Element[,] cells, int size)
+    private static Element[,] ApplyGravity(Element[,] cells, int size)
     {
         Element[,] newCells = new Element[size, size];
 
         for (int row = 0; row < size; row++)
+        {
             for (int col = 0; col < size; col++)
+            {
                 newCells[row, col] = new Element { Symbol = Element.EMPTY };
+            }
+        }
 
         for (int col = 0; col < size; col++)
         {
@@ -160,46 +216,32 @@ public static partial class Game
         return newCells;
     }
 
-    
-
-    private static Element[,] FillRandom(this Element[,] cells)
+    private static int CalculateScore(int removedCount)
     {
-        Element[,] newCells = (Element[,])cells.Clone();
-
-        for (int row = 0; row < newCells.GetLength(0); row++)
-        {
-            for (int col = 0; col < newCells.GetLength(1); col++)
-            {
-                if (newCells[row, col].Symbol == Element.EMPTY)
-                {
-                    newCells[row, col] = new Element
-                    {
-                        Symbol = symbols[r.Next(symbols.Length)]
-                    };
-                }
-            }
-        }
-
-        return newCells;
+        // Базовая система подсчета очков: 10 за каждый элемент
+        return removedCount * 10;
     }
 
-    private static Board ToBoard(this Element[,] cells, int size)
+    public static Board CloneBoard(Board board)
     {
-        return new Board { size = size, cells = cells };
-    }
-
-
-    public static Board FillWithoutTriples(this Board board)
-    {
-        // Двойным циклом обходим все клетки доски
+        Board b = new Board(board.size);
         for (int row = 0; row < board.size; row++)
             for (int col = 0; col < board.size; col++)
-                board.cells[row, col] = new Element(board.PickSymbol(row, col));
-
-        return board;
+                b.cells[row, col] = board.cells[row, col];
+        return b;
     }
 
-    public static Board Draw(this Board board)
+    private static void AddMatchIfValid(List<Match> matches, int row, int col,
+            int length, MatchDirection direction)
+    {
+        // Учитываем только комбинации из 3 и более элементов (ТЗ)
+        if (length >= 3)
+        {
+            matches.Add(new Match(direction, row, col, length));
+        }
+    }
+
+    public static void Draw(Board board)
     {
         Console.WriteLine("  0 1 2 3 4 5 6 7");
         for (int i = 0; i < 8; i++)
@@ -212,120 +254,5 @@ public static partial class Game
             Console.WriteLine();
         }
         Console.WriteLine();
-        return board;
     }
-
-    public static Board CloneBoard(this Board board)
-    {
-        Board b = new Board(board.size);
-        for (int row = 0; row < board.size; row++)
-            for (int col = 0; col < board.size; col++)
-                b.cells[row, col] = board.cells[row, col];
-        return b;
-    }
-
-    public static BoardState InitializeGame(int boardSize)
-    {
-        return
-            new Board(boardSize)
-            .FillWithoutTriples()
-            .ToStartState();
-    }
-
-    public static BoardState ProcessCascade(this BoardState state)
-    {
-        List<Match> matches = state.Board.FindMatches();
-
-        if (matches.Count == 0)
-            return state;
-
-        return
-            state.RemoveMatches(matches)
-            .FillEmptySpaces()
-            .ProcessCascade();
-    }
-
-    public static BoardState ToStartState(this Board board)
-    {
-        return new BoardState(board, 0);
-    }
-
-    public static BoardState Show(this BoardState state)
-    {
-        state.Board.Draw();
-        Console.WriteLine("Score: " + state.Score);
-        return state;
-    }
-
-    public static BoardState RemoveMatches(this BoardState currentState, List<Match> matches)
-    {
-        if (matches == null || matches.Count == 0)
-            return currentState;
-
-        int newScore = currentState.Score + matches.Sum(m => m.Length).CalculateScore();
-
-        return
-            currentState.Board.cells.MarkForRemoval(matches)
-            .ApplyGravity(currentState.Board.size)
-            .ToBoard(currentState.Board.size)
-            .ToState(newScore);
-    }
-
-    public static BoardState ReadMove(this BoardState bs)
-    {
-        Console.WriteLine(">");
-        string input = Console.ReadLine();
-        if (input == "q")
-            Environment.Exit(0);
-
-        return input
-            .ParseCoords()
-            .ApplyTo(bs);
-    }
-
-    public static BoardState PlayTurn(this BoardState state)
-    {
-        return state
-            .Show()
-            .ReadMove()
-            .ProcessCascade();
-    }
-
-    private static BoardState ToState(this Board board, int score)
-    {
-        return new BoardState(board, score);
-    }
-
-    public static BoardState FillEmptySpaces(this BoardState currentState)
-    {
-        if (currentState.Board.cells == null)
-            return currentState;
-
-        return currentState.Board.cells
-            .FillRandom()
-            .ToBoard(currentState.Board.size)
-            .ToState(currentState.Score);
-    }
-
-    private static BoardState ApplyTo(this int[] c, BoardState bs)
-    {
-        Board board = bs.Board.CloneBoard();
-        int x = c[1], y = c[0], x1 = c[3], y1 = c[2];
-        Element e = board.cells[x, y];
-        board.cells[x, y] = board.cells[x1, y1];
-        board.cells[x1, y1] = e;
-        return board.ToState(bs.Score);
-    }
-
-    private static int[] ParseCoords(this string input)
-    {
-        return input.Split(' ').Select(int.Parse).ToArray();
-    }
-
-    private static int CalculateScore(this int removedCount)
-    {
-        // Базовая система подсчета очков: 10 за каждый элемент
-        return removedCount * 10;
-    }
-
 }
