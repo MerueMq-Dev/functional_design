@@ -5,24 +5,31 @@ public static partial class Game
 {
     static Random r = new Random();
     static char[] symbols = { 'A', 'B', 'C', 'D', 'E', 'F' };
-    
-    public static BoardState InitializeGame(int boardSize = 8)
+
+    public static BoardState InitializeGame(int boardSize = 8, bool debugMode = false)
     {
         return new BoardState(new Board(boardSize), 0)
             .Pipe(FillEmptySpaces)
-            .Pipe(ProcessCascade);
+            .Pipe(state => ProcessCascade(state , debugMode));
     }
 
-    public static BoardState ProcessCascade(BoardState state)
+    public static BoardState ProcessCascade(BoardState state, bool debugMode = false)
     {
         List<Match> matches = FindMatches(state.Board);
 
-          if (matches.Count == 0)
-            return state;
+        return matches.Count == 0
+            ? state
+            : RunPipeline(state, matches, debugMode);
+    }
 
-        return RemoveMatches(state, matches)
+    private static BoardState RunPipeline(BoardState state, List<Match> matches, bool debugMode = false)
+    {
+        return state
+            .Pipe(s => RemoveMatches(s, matches))
+            .Draw(debugMode)
             .Pipe(FillEmptySpaces)
-            .Pipe(ProcessCascade);
+            .Draw(debugMode)
+            .Pipe(state => ProcessCascade(state, debugMode));
     }
 
     public static BoardState RemoveMatches(BoardState currentState, List<Match> matches)
@@ -168,7 +175,6 @@ public static partial class Game
         return matches;
     }
 
-    // ===================== -> Element[,] =====================
 
     private static Element[,] MarkCellsForRemoval(Board board, List<Match> matches)
     {
@@ -241,8 +247,9 @@ public static partial class Game
         }
     }
 
-    public static void Draw(Board board)
+    public static BoardState Draw(this BoardState boardState, bool ask = false)
     {
+        Board board = boardState.Board;
         Console.WriteLine("  0 1 2 3 4 5 6 7");
         for (int i = 0; i < 8; i++)
         {
@@ -254,5 +261,7 @@ public static partial class Game
             Console.WriteLine();
         }
         Console.WriteLine();
+        if (ask) Console.ReadLine();
+        return boardState;
     }
 }
